@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+
+var glob = require("glob");
+var colors = require("colors");
+var async = require("async");
+var checksum = require("checksum");
+var exec = require("child_process").exec;
+var fs = require("fs");
+
+if (process.argv.length != 5)
+{
+  console.log("Usage :", process.argv[1], "[champions_path] [asm_1] [asm_2]");
+  process.exit(84);
+}
+
+var champions_path = process.argv[2];
+var asm_1 = process.argv[3];
+var asm_2 = process.argv[4];
+var amount = 0;
+
+console.log('Welcome to Corewar ASM tester !'.white.bgCyan);
+
+var makeTest = function(file, callback)
+{
+  console.log("[INFO] Start test for".magenta.bold, file.yellow);
+
+  var binaryFile = process.cwd() + "/" + file.substring(file.lastIndexOf("/") + 1, file.lastIndexOf(".")) + ".cor";
+  var asm_1_checksum = null;
+  var asm_2_checksum = null;
+
+  fs.unlink(binaryFile, function(err)
+  {
+    exec(asm_1 + " " + file, {},  function(err, stdout, stderr)
+    {
+      if (stderr)
+        console.log("[INFO] Error output for ASM1 : ".cyan.italic, stderr.replace(/\n/g, '').italic);
+      checksum.file(binaryFile, function (err, asm_1_checksum)
+      {
+        fs.unlink(binaryFile, function(err)
+        {
+          exec(asm_2 + " " + file, {},  function(err, stdout, stderr2)
+          {
+            if (stderr2)
+              console.log("[INFO] Error output for ASM2 : ".cyan.italic, stderr2.replace(/\n/g, '').italic);
+            checksum.file(binaryFile, function (err, asm_2_checksum)
+            {
+              fs.unlink(binaryFile, function(err)
+              {
+                if (asm_1_checksum == asm_2_checksum)
+                {
+                  console.log("[OK] Checksum match for".green.bold, file.yellow);
+                  amount = amount + 1;
+                  return callback(true, file);
+                }
+                else
+                {
+                  console.log("[ERROR] Checksum mismatch for".red.bold, file.yellow);
+                  console.log("[INFO] Checksum 1 :".blue.bold, "[" + asm_1_checksum + "]", "Checksum 2 :".blue.bold, "[" + asm_2_checksum + "]");
+                  return callback(false, file);
+                }
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+}
+
+glob(champions_path + "/*.s", [], function (err, files)
+{
+  var q = async.queue(function(file, callback)
+  {
+      makeTest(file, function(success, filename)
+      {
+        if (success)
+        {
+          console.log("[OK] Test passed for".green.bold, filename.yellow);
+          callback();
+        }
+        else
+        {
+          console.log("[ERROR] Test failed for ".red.bold, filename.yellow.bold);
+          process.exit(84);
+        }
+      });
+  }, 1);
+
+  q.drain = function()
+  {
+      console.log('End of tests : everything is OK. Successes : '.white.bgGreen.bold + String(amount).white.bgGreen.bold);
+  };
+
+  for (var i = 0, length = files.length; i < length; i++)
+  {
+    q.push(files[i]);
+  }
+});
